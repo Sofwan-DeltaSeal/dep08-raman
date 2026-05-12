@@ -1,29 +1,21 @@
 import { useState, useEffect } from "react";
+import { supabase } from "./supabase";
 
 // ==================== LOGO ====================
 function RamanLogo({ size = 48, showText = true }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: showText ? 12 : 0 }}>
       <svg width={size} height={size} viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-        {/* Outer dark blue arc */}
         <ellipse cx="100" cy="100" rx="88" ry="62" fill="none" stroke="#1a3a6e" strokeWidth="18" strokeDasharray="420 60" strokeDashoffset="30" strokeLinecap="round"/>
-        {/* Inner light blue swoosh */}
         <path d="M 28 120 Q 60 170 140 155 Q 180 148 175 110" fill="none" stroke="#3b82f6" strokeWidth="14" strokeLinecap="round"/>
-        {/* Circle glow */}
         <circle cx="100" cy="95" r="38" fill="#dbeafe" opacity="0.7"/>
-        {/* Running person */}
         <g fill="#1a3a6e">
-          {/* Head */}
           <circle cx="108" cy="64" r="10"/>
-          {/* Body */}
           <path d="M100 74 L92 108 L82 130 L90 132 L100 112 L108 130 L118 128 L106 104 L112 80 Z"/>
-          {/* Arms */}
           <path d="M100 80 L80 92 L78 100 L85 101 L100 92" fill="#3b82f6"/>
           <path d="M108 78 L124 88 L126 96 L120 97 L108 86" fill="#3b82f6"/>
-          {/* Legs - running pose */}
           <path d="M92 108 L76 125 L80 130 L95 116 Z" fill="#3b82f6"/>
           <path d="M106 104 L120 118 L118 125 L105 112 Z" fill="#3b82f6"/>
-          {/* Shoes */}
           <ellipse cx="78" cy="131" rx="9" ry="5" fill="#3b82f6"/>
           <ellipse cx="120" cy="126" rx="9" ry="5" fill="#3b82f6"/>
         </g>
@@ -90,18 +82,31 @@ const DURATION_OPTIONS = [
   { value: "doctor_discretion", label: "ตามดุลยพินิจแพทย์ (กรณีโรคไม่ดีขึ้น)" },
 ];
 
-// ==================== COMPONENTS ====================
-
+// ==================== LOGIN PAGE ====================
 function LoginPage({ onLogin }) {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (!username || !password) { setError("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน"); return; }
+  const handleLogin = async () => {
+    if (!email || !password) { setError("กรุณากรอกอีเมลและรหัสผ่าน"); return; }
     setLoading(true);
-    setTimeout(() => { setLoading(false); onLogin({ username, role: "แพทย์ผู้ประเมิน" }); }, 800);
+    setError("");
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) {
+      setError("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+      setLoading(false);
+      return;
+    }
+    // ดึงข้อมูล profile
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", data.user.id)
+      .single();
+    setLoading(false);
+    onLogin({ ...data.user, ...profile });
   };
 
   return (
@@ -111,18 +116,20 @@ function LoginPage({ onLogin }) {
           <RamanLogo size={80} showText={false} />
           <h1>ระบบประเมินความพิการ</h1>
           <p>ทางการเคลื่อนไหวและทางร่างกาย</p>
-          <div style={{ marginTop: 8 }}>
-            <RamanLogo size={28} showText={true} />
-          </div>
+          <div style={{ marginTop: 8 }}><RamanLogo size={28} showText={true} /></div>
           <span className="badge">กรมส่งเสริมและพัฒนาคุณภาพชีวิตคนพิการ</span>
         </div>
         <div className="form-group">
-          <label>ชื่อผู้ใช้งาน</label>
-          <input type="text" placeholder="Username" value={username} onChange={(e) => { setUsername(e.target.value); setError(""); }} onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
+          <label>อีเมล</label>
+          <input type="email" placeholder="example@raman.go.th" value={email}
+            onChange={(e) => { setEmail(e.target.value); setError(""); }}
+            onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
         </div>
         <div className="form-group">
           <label>รหัสผ่าน</label>
-          <input type="password" placeholder="Password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
+          <input type="password" placeholder="Password" value={password}
+            onChange={(e) => { setPassword(e.target.value); setError(""); }}
+            onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
         </div>
         {error && <div className="error-msg">{error}</div>}
         <button className="btn-primary" onClick={handleLogin} disabled={loading}>
@@ -134,6 +141,7 @@ function LoginPage({ onLogin }) {
   );
 }
 
+// ==================== PATIENT INFO PAGE ====================
 function PatientInfoPage({ data, onChange, onNext }) {
   const fields = [
     { key: "firstName", label: "ชื่อ", placeholder: "ชื่อ", half: true },
@@ -147,7 +155,6 @@ function PatientInfoPage({ data, onChange, onNext }) {
     { key: "icdCode", label: "รหัส ICD-10 (ถ้ามี)", placeholder: "เช่น I63.9, G82.5", half: true },
     { key: "ward", label: "หน่วยงาน / แผนก", placeholder: "ชื่อแผนก", half: true },
   ];
-
   const isValid = data.firstName && data.lastName && data.hn && data.idCard && data.diagnosis && data.duration;
 
   return (
@@ -181,6 +188,7 @@ function PatientInfoPage({ data, onChange, onNext }) {
   );
 }
 
+// ==================== ASSESSMENT PAGE ====================
 function AssessmentPage({ answers, onChange, onNext, onBack }) {
   const [activeSection, setActiveSection] = useState(0);
   const sections = Object.entries(ASSESSMENT_CRITERIA);
@@ -234,6 +242,7 @@ function AssessmentPage({ answers, onChange, onNext, onBack }) {
   );
 }
 
+// ==================== RESULT PAGE ====================
 function ResultPage({ patient, answers, onNext, onBack }) {
   const calcResult = () => {
     const secs = Object.entries(ASSESSMENT_CRITERIA);
@@ -293,16 +302,19 @@ function ResultPage({ patient, answers, onNext, onBack }) {
   );
 }
 
+// ==================== SIGNATURE PAGE ====================
 function SignaturePage({ patient, answers, user, onBack, onSubmit }) {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const dateStr = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear() + 543}`;
-  const [assessorName, setAssessorName] = useState("");
-  const [assessorLicense, setAssessorLicense] = useState("");
+  const [assessorName, setAssessorName] = useState(user?.full_name || "");
+  const [assessorLicense, setAssessorLicense] = useState(user?.license_no || "");
   const [approverName, setApproverName] = useState("");
   const [approverLicense, setApproverLicense] = useState("");
   const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [liveTime, setLiveTime] = useState("");
 
   useEffect(() => {
@@ -316,14 +328,87 @@ function SignaturePage({ patient, answers, user, onBack, onSubmit }) {
     let isDisabled = false; let disabilityType = [];
     Object.entries(ASSESSMENT_CRITERIA).forEach(([key, sec]) => {
       const hasPositive = sec.items.some((i) => answers[i.id] === true);
-      if (hasPositive) { isDisabled = true; if (key === "section1" || key === "section2") disabilityType.push("ความพิการทางการเคลื่อนไหว"); if (key === "section3" || key === "section4") disabilityType.push("ความพิการทางร่างกาย"); }
+      if (hasPositive) {
+        isDisabled = true;
+        if (key === "section1" || key === "section2") disabilityType.push("ความพิการทางการเคลื่อนไหว");
+        if (key === "section3" || key === "section4") disabilityType.push("ความพิการทางร่างกาย");
+      }
     });
     return { isDisabled, disabilityType: [...new Set(disabilityType)] };
   };
   const { isDisabled, disabilityType } = calcResult();
   const canSubmit = assessorName && assessorLicense;
 
-  const handleSubmit = () => { setSubmitted(true); setTimeout(() => onSubmit(), 1500); };
+  const handleSubmit = async () => {
+    setSaving(true);
+    setSaveError("");
+    try {
+      // 1. บันทึกหรืออัปเดตข้อมูลผู้ป่วย
+      const { data: patientData, error: patientError } = await supabase
+        .from("patients")
+        .upsert({
+          hn: patient.hn,
+          id_card: patient.idCard,
+          first_name: patient.firstName,
+          last_name: patient.lastName,
+          age: patient.age ? parseInt(patient.age) : null,
+          gender: patient.gender === "-- เลือก --" ? null : patient.gender,
+          created_by: user?.id,
+        }, { onConflict: "hn" })
+        .select()
+        .single();
+
+      if (patientError) throw patientError;
+
+      // 2. บันทึกผลการประเมิน
+      const { data: assessmentData, error: assessmentError } = await supabase
+        .from("assessments")
+        .insert({
+          patient_id: patientData.id,
+          diagnosis: patient.diagnosis,
+          icd_code: patient.icdCode || null,
+          duration: patient.duration,
+          ward: patient.ward || null,
+          is_disabled: isDisabled,
+          disability_types: disabilityType,
+          assessor_name: assessorName,
+          assessor_license: assessorLicense,
+          approver_name: approverName || null,
+          approver_license: approverLicense || null,
+          notes: notes || null,
+          assessed_by: user?.id,
+        })
+        .select()
+        .single();
+
+      if (assessmentError) throw assessmentError;
+
+      // 3. บันทึกคำตอบแต่ละข้อ
+      const answerRows = [];
+      Object.entries(ASSESSMENT_CRITERIA).forEach(([sectionKey, sec]) => {
+        sec.items.forEach((item) => {
+          answerRows.push({
+            assessment_id: assessmentData.id,
+            section: sectionKey,
+            item_id: item.id,
+            answer: answers[item.id],
+          });
+        });
+      });
+
+      const { error: answersError } = await supabase
+        .from("assessment_answers")
+        .insert(answerRows);
+
+      if (answersError) throw answersError;
+
+      setSubmitted(true);
+      setTimeout(() => onSubmit(), 2000);
+    } catch (err) {
+      setSaveError("เกิดข้อผิดพลาด: " + err.message);
+      setSaving(false);
+    }
+  };
 
   if (submitted) {
     return (
@@ -371,10 +456,13 @@ function SignaturePage({ patient, answers, user, onBack, onSubmit }) {
         <label>หมายเหตุเพิ่มเติม</label>
         <textarea placeholder="ระบุข้อสังเกตหรือหมายเหตุเพิ่มเติม (ถ้ามี)" rows={3} value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
+      {saveError && <div className="error-msg">{saveError}</div>}
       <div className="legal-note"><strong>📋 อ้างอิง:</strong> ประกาศกระทรวงการพัฒนาสังคมและความมั่นคงของมนุษย์ เรื่อง ประเภทและหลักเกณฑ์ความพิการ พ.ศ. 2568 และคู่มือการวินิจฉัยและตรวจประเมินความพิการ (DEP-08)</div>
       <div className="page-actions">
         <button className="btn-outline" onClick={onBack}>← กลับ</button>
-        <button className="btn-primary" onClick={handleSubmit} disabled={!canSubmit}>บันทึกและออกเอกสาร ✓</button>
+        <button className="btn-primary" onClick={handleSubmit} disabled={!canSubmit || saving}>
+          {saving ? "กำลังบันทึก..." : "บันทึกและออกเอกสาร ✓"}
+        </button>
       </div>
     </div>
   );
@@ -386,10 +474,37 @@ export default function App() {
   const [step, setStep] = useState(1);
   const [patient, setPatient] = useState({});
   const [answers, setAnswers] = useState({});
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // ตรวจสอบ session เมื่อเปิดแอป
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .single();
+        setUser({ ...session.user, ...profile });
+      }
+      setCheckingAuth(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) setUser(null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null); setStep(1); setPatient({}); setAnswers({});
+  };
 
   const updatePatient = (key, val) => setPatient(prev => ({ ...prev, [key]: val }));
   const updateAnswer = (id, val) => setAnswers(prev => ({ ...prev, [id]: val }));
   const handleSubmit = () => { setTimeout(() => { setStep(1); setPatient({}); setAnswers({}); }, 2000); };
+
+  if (checkingAuth) return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100vh", fontFamily:"Sarabun,sans-serif", fontSize:18 }}>กำลังโหลด...</div>;
 
   if (!user) return (
     <><style>{STYLES}</style><LoginPage onLogin={(u) => setUser(u)} /></>
@@ -400,19 +515,16 @@ export default function App() {
       <style>{STYLES}</style>
       <div className="app-shell">
         <header className="app-header">
-          <div className="header-left">
-            <RamanLogo size={44} showText={true} />
-          </div>
+          <div className="header-left"><RamanLogo size={44} showText={true} /></div>
           <div className="header-center">
             <div className="header-title">ระบบประเมินความพิการทางการเคลื่อนไหวและทางร่างกาย</div>
             <div className="header-sub">คู่มือการวินิจฉัยฯ DEP-08 | พ.ศ. 2568</div>
           </div>
           <div className="header-right">
-            <span className="user-badge">👤 {user.username}</span>
-            <button className="btn-logout" onClick={() => { setUser(null); setStep(1); }}>ออกจากระบบ</button>
+            <span className="user-badge">👤 {user.full_name || user.email}</span>
+            <button className="btn-logout" onClick={handleLogout}>ออกจากระบบ</button>
           </div>
         </header>
-
         <div className="progress-bar-wrap">
           {[1,2,3,4].map(s => (
             <div key={s} className={`progress-step ${step >= s ? "active" : ""} ${step === s ? "current" : ""}`}>
@@ -421,7 +533,6 @@ export default function App() {
             </div>
           ))}
         </div>
-
         <main className="app-main">
           {step === 1 && <PatientInfoPage data={patient} onChange={updatePatient} onNext={() => setStep(2)} />}
           {step === 2 && <AssessmentPage answers={answers} onChange={updateAnswer} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
@@ -444,7 +555,6 @@ const STYLES = `
     --text: #1a2638; --shadow: 0 4px 20px rgba(13,33,55,0.12); --radius: 12px;
   }
   body { font-family: 'Sarabun', sans-serif; background: var(--light); color: var(--text); font-size: 15px; line-height: 1.6; }
-
   .login-page { min-height: 100vh; background: linear-gradient(135deg, var(--navy) 0%, var(--navy2) 50%, #1a5a9e 100%); display: flex; align-items: center; justify-content: center; padding: 20px; }
   .login-card { background: white; border-radius: 20px; padding: 44px 40px; width: 100%; max-width: 440px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
   .login-logo { text-align: center; margin-bottom: 32px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
@@ -453,7 +563,6 @@ const STYLES = `
   .badge { display: inline-block; background: var(--navy); color: white; font-size: 11px; padding: 4px 10px; border-radius: 20px; margin-top: 4px; }
   .login-note { text-align: center; color: var(--gray); font-size: 12px; margin-top: 16px; }
   .error-msg { background: #fef2f2; border: 1px solid #fca5a5; color: var(--red); padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
-
   .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
   .app-header { background: linear-gradient(90deg, #0d2137 0%, #1a3a6e 60%, #1a5a9e 100%); color: white; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
   .header-left { flex-shrink: 0; }
@@ -464,7 +573,6 @@ const STYLES = `
   .user-badge { font-size: 13px; background: rgba(255,255,255,0.15); padding: 6px 14px; border-radius: 20px; }
   .btn-logout { background: rgba(255,255,255,0.12); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 13px; transition: background 0.2s; }
   .btn-logout:hover { background: rgba(255,255,255,0.22); }
-
   .progress-bar-wrap { background: #1a3a6e; display: flex; justify-content: center; gap: 0; padding: 0 20px; }
   .progress-step { display: flex; align-items: center; gap: 10px; padding: 12px 24px; color: rgba(255,255,255,0.4); font-size: 13px; transition: all 0.3s; }
   .progress-step.active { color: rgba(255,255,255,0.8); }
@@ -473,7 +581,6 @@ const STYLES = `
   .progress-step.active .ps-circle { border-color: #3b82f6; background: #1d4ed8; color: white; }
   .progress-step.current .ps-circle { border-color: var(--gold); background: var(--gold); color: var(--navy); }
   .ps-label { font-weight: 500; }
-
   .app-main { flex: 1; padding: 28px; max-width: 900px; margin: 0 auto; width: 100%; }
   .page-content { animation: fadeIn 0.3s ease; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -481,7 +588,6 @@ const STYLES = `
   .step-indicator { font-size: 12px; color: #1d4ed8; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
   .page-header h2 { font-family: 'Noto Serif Thai', serif; font-size: 22px; color: var(--navy); font-weight: 700; }
   .page-header p { color: var(--gray); margin-top: 4px; font-size: 14px; }
-
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .form-group { display: flex; flex-direction: column; gap: 6px; }
   .form-group.full { grid-column: 1/-1; }
@@ -491,7 +597,6 @@ const STYLES = `
   input, select, textarea { border: 1.5px solid var(--gray2); border-radius: 8px; padding: 10px 14px; font-family: inherit; font-size: 14px; color: var(--text); background: white; transition: border-color 0.2s, box-shadow 0.2s; outline: none; }
   input:focus, select:focus, textarea:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
   textarea { resize: vertical; }
-
   .btn-primary { background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%); color: white; border: none; padding: 12px 28px; border-radius: 10px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(29,78,216,0.3); }
   .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(29,78,216,0.4); }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
@@ -501,7 +606,6 @@ const STYLES = `
   .btn-secondary:hover { background: var(--navy2); }
   .page-actions { display: flex; gap: 12px; align-items: center; margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--gray2); }
   .helper-text { font-size: 13px; color: var(--gray); margin-left: auto; }
-
   .section-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
   .tab-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 16px; border-radius: 10px; border: 1.5px solid var(--gray2); background: white; cursor: pointer; font-family: inherit; transition: all 0.2s; min-width: 140px; }
   .tab-btn.active { border-color: #3b82f6; background: #eff6ff; }
@@ -526,7 +630,6 @@ const STYLES = `
   .btn-ans.selected-yes { background: #fee2e2; border-color: var(--red); color: var(--red); }
   .btn-ans.selected-no { background: #dcfce7; border-color: var(--green); color: var(--green); }
   .section-nav { display: flex; gap: 10px; justify-content: flex-end; padding-top: 12px; }
-
   .result-card { display: flex; align-items: center; gap: 20px; padding: 24px 28px; border-radius: 16px; margin-bottom: 28px; border: 2px solid; }
   .result-disabled { background: #fff5f5; border-color: #f87171; }
   .result-not-disabled { background: #f0fdf4; border-color: #86efac; }
@@ -550,7 +653,6 @@ const STYLES = `
   .badge-pos { background: #fee2e2; color: var(--red); }
   .badge-neg { background: #dcfce7; color: var(--green); }
   .exclusion-note { background: #fffbeb; border: 1px solid #fcd34d; padding: 12px 16px; border-radius: 8px; font-size: 13px; color: #92400e; margin-bottom: 20px; }
-
   .datetime-banner { background: linear-gradient(135deg, var(--navy) 0%, #1a3a6e 100%); color: white; border-radius: 12px; padding: 16px 24px; display: flex; gap: 32px; margin-bottom: 24px; }
   .dt-item { display: flex; flex-direction: column; gap: 4px; }
   .dt-label { font-size: 12px; opacity: 0.7; }
@@ -568,7 +670,6 @@ const STYLES = `
   .sign-line { border-top: 1.5px dashed var(--gray); margin-bottom: 8px; }
   .sign-box p { font-size: 12px; color: var(--gray); }
   .legal-note { background: #eff6ff; border: 1px solid #bfdbfe; padding: 12px 16px; border-radius: 8px; font-size: 13px; color: #1e3a8a; margin-bottom: 8px; }
-
   .center-content { display: flex; align-items: center; justify-content: center; min-height: 60vh; }
   .success-anim { text-align: center; animation: fadeIn 0.5s ease; }
   .success-icon { font-size: 64px; color: var(--green); margin-bottom: 16px; animation: pop 0.5s ease; }
